@@ -1,7 +1,5 @@
 -- Implementazione semaforo intelligente --
 -- Progetto sessione estiva 2018-2019 --
--- Mancini Andrea matricola: 276435 --
--- Weglarz Dawid matricola: 277268 --
     
 
 -- Server che raccoglie i dati dai sensori e decide chi deve passare in base alla priorità
