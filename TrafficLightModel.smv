@@ -1,0 +1,661 @@
+-- Implementazione semaforo intelligente --
+-- Progetto sessione estiva 2018-2019 --
+-- Mancini Andrea matricola: 276435 --
+-- Weglarz Dawid matricola: 277268 --
+    
+
+-- Server che raccoglie i dati dai sensori e decide chi deve passare in base alla priorità
+MODULE server(sensoriS1, semaforoS1, sensoriS2, semaforoS2, sensoriS3, semaforoS3, sensoriS4, semaforoS4)
+
+-- Definisco dei metodi per ricavare il massimo tra coppie di (gruppi di) sensori
+DEFINE max12 := max(sensoriS1.priority, sensoriS2.priority);
+DEFINE max13 := max(sensoriS1.priority, sensoriS3.priority);
+DEFINE max14 := max(sensoriS1.priority, sensoriS4.priority);
+DEFINE max23 := max(sensoriS2.priority, sensoriS3.priority);
+DEFINE max24 := max(sensoriS2.priority, sensoriS4.priority);
+DEFINE max34 := max(sensoriS3.priority, sensoriS4.priority);
+
+-- Definisco dei metodi per ricavare il minimo tra coppie di (gruppi di) sensori
+DEFINE min12 := min(sensoriS1.priority, sensoriS2.priority);
+DEFINE min13 := min(sensoriS1.priority, sensoriS3.priority);
+DEFINE min14 := min(sensoriS1.priority, sensoriS4.priority);
+DEFINE min23 := min(sensoriS2.priority, sensoriS3.priority);
+DEFINE min24 := min(sensoriS2.priority, sensoriS4.priority);
+DEFINE min34 := min(sensoriS3.priority, sensoriS4.priority);
+
+-- Definisco i metodi che restituiscono le priorità ordinate
+DEFINE max_priority := max(max12, max34);
+DEFINE mid_max_priority := max(max(max(min12, min23), max(min34, min13)), max(min14, min24));
+DEFINE mid_min_priority := min(min(min(max12, max23), min(max34, max13)), min(max14, max24));
+DEFINE min_priority := min(min12, min34);
+
+VAR
+    -- Definisco lo stack dove inserisco le strada secondo la loro priorità
+    -- In caso di parità vengono inseriti in ordine S1 -> S2 -> S3 -> S4
+    -- Le strade che hanno priorità zero non vengono inserite
+    stack : array 1..4 of {S1, S2, S3, S4, empty};
+
+    -- Variabile che indica allo stack di rimuovere la testa dello stack
+    pop : boolean;
+
+    -- Indica la fase in cui vengono prese le misurazioni dai sensori
+    -- Mentre è vera il resto del sistema rimane fermo
+    sensing_phase : boolean;
+
+ASSIGN
+    -- Inizializzo lo stack
+    init(stack[1]) := empty;
+    init(stack[2]) := empty;
+    init(stack[3]) := empty;
+    init(stack[4]) := empty;
+
+    -- Inizializzo la variabili di stato
+    init(sensing_phase) := TRUE;
+    init(pop) := FALSE;
+
+    -- Prossimo valore per il primo elemento dello stack
+    next(stack[1]) :=
+    case
+        -- Se la priorità massima è zero allora non c'è nulla da inserire
+        max_priority = 0 : empty;
+
+        -- Se siamo nella fase di misurazione e lo stack[1] è ancora vuoto
+        -- inserisco l'elemento con massima priorità.
+        sensing_phase = TRUE & stack[1] = empty:
+        case
+            max_priority = sensoriS1.priority : S1;
+            max_priority = sensoriS2.priority : S2;
+            max_priority = sensoriS3.priority : S3;
+            max_priority = sensoriS4.priority : S4;
+        esac;
+
+        -- Se non siamo nella fase di misurazione e bisogna fare un operazione di pop sullo stack
+        -- E viene traslato il secondo valore dello stack in testa
+        sensing_phase = FALSE & pop = TRUE : stack[2];
+
+        -- Altrimenti il valore rimane invariato
+        TRUE : stack[1];
+    esac;
+
+    -- Prossimo valore per il secondo elemento dello stack
+    next(stack[2]) :=
+    case
+        -- Se la seconda priorità massima è zero allora non c'è nulla da inserire
+        mid_max_priority = 0 : empty;
+
+        -- Se siamo nella fase di misurazione e il secondo elemento
+        -- dello stack è ancora vuoto  
+        sensing_phase = TRUE & stack[2] = empty:
+        case
+            -- Se in cima allo stack c'è S1
+            -- Allora prende il secondo più grande fra le strade restanti
+            -- (Questo permette di gestire i casi in cui si hanno le priorità uguali)
+            stack[1] = S1 :
+            case
+                mid_max_priority = sensoriS2.priority : S2;
+                mid_max_priority = sensoriS3.priority : S3;
+                mid_max_priority = sensoriS4.priority : S4;
+                TRUE: empty;
+            esac;
+
+            -- Se in cima allo stack c'è S2
+            -- Allora prende il secondo più grande fra le strade restanti
+            stack[1] = S2 :
+            case
+                mid_max_priority = sensoriS1.priority : S1;
+                mid_max_priority = sensoriS3.priority : S3;
+                mid_max_priority = sensoriS4.priority : S4;
+                TRUE : empty;
+            esac;
+
+            -- Se in cima allo stack c'è S3
+            -- Allora prende il secondo più grande fra le strade restanti
+            stack[1] = S3 :
+            case
+                mid_max_priority = sensoriS1.priority : S1;
+                mid_max_priority = sensoriS2.priority : S2;
+                mid_max_priority = sensoriS4.priority : S4;
+                TRUE : empty;
+            esac;
+
+            -- Se in cima allo stack c'è S4
+            -- Allora prende il secondo più grande fra le strade restanti
+            stack[1] = S4 :
+            case
+                mid_max_priority = sensoriS1.priority : S1;
+                mid_max_priority = sensoriS2.priority : S2;
+                mid_max_priority = sensoriS3.priority : S3;
+                TRUE : empty;
+            esac;
+
+            -- Se non c'è nessuno in cima allo stack aspetto il mio turno
+            TRUE : empty;
+        esac;
+
+        -- Se non siamo nella fase di misurazione e bisogna fare un pop sullo stack
+        -- Traslo il terzo elemento dello stack in seconda posizione
+        sensing_phase = FALSE & pop = TRUE : stack[3];
+
+        -- Altrimenti rimane invartiato
+        TRUE : stack[2];
+    esac;
+
+    -- Funzione che decide il terzo elemento dello stack
+    next(stack[3]):=
+    case
+        -- Se la terza priorità più grande è uguale a zero non inserire nulla
+        mid_min_priority = 0 : empty;
+
+        -- Se siamo nella fase di misurazione e stack[3] è vuoto
+        sensing_phase = TRUE & stack[3] = empty:
+        case
+            -- Nel caso i primi due elementi dello stack sono S1/S2 inserisco i rimanenti
+            (stack[1] = S1 & stack[2] = S2) | (stack[1] = S2 & stack[2] = S1) :
+            case
+                mid_min_priority = sensoriS3.priority : S3;
+                mid_min_priority = sensoriS4.priority : S4;
+                TRUE : empty;
+            esac;
+            
+            -- Nel caso i primi due elementi dello stack sono S1/S3 inserisco i rimanenti
+            (stack[1] = S1 & stack[2] = S3) | (stack[1] = S3 & stack[2] = S1) :
+            case
+                mid_min_priority = sensoriS2.priority : S2;
+                mid_min_priority = sensoriS4.priority : S4;
+                TRUE : empty;
+            esac;
+
+            -- Nel caso i primi due elementi dello stack sono S1/S4 inserisco i rimanenti
+            (stack[1] = S1 & stack[2] = S4) | (stack[1] = S4 & stack[2] = S1) :
+            case
+                mid_min_priority = sensoriS2.priority : S2;
+                mid_min_priority = sensoriS3.priority : S3;
+                TRUE : empty;
+            esac;
+            
+            -- Nel caso i primi due elementi dello stack sono S2/S3 inserisco i rimanenti
+            (stack[1] = S2 & stack[2] = S3) | (stack[1] = S3 & stack[2] = S2) :
+            case
+                mid_min_priority = sensoriS1.priority : S1;
+                mid_min_priority = sensoriS4.priority : S4;
+                TRUE : empty;
+            esac;
+
+            -- Nel caso i primi due elementi dello stack sono S2/S4 inserisco i rimanenti
+            (stack[1] = S2 & stack[2] = S4) | (stack[1] = S4 & stack[2] = S2) :
+            case
+                mid_min_priority = sensoriS1.priority : S1;
+                mid_min_priority = sensoriS3.priority : S3;
+                TRUE : empty;
+            esac;
+            
+            -- Nel caso i primi due elementi dello stack sono S3/S4 inserisco i rimanenti
+            (stack[1] = S3 & stack[2] = S4) | (stack[1] = S4 & stack[2] = S3) :
+            case
+                mid_min_priority = sensoriS1.priority : S1;
+                mid_min_priority = sensoriS2.priority : S2;
+                TRUE : empty;
+            esac;
+
+            -- Se i primi due elementi dello stack sono ancora vuoti non fare nulla
+            TRUE : empty;
+        esac;
+
+        -- Se non siamo nella fase di misurazione e bisogna fare un operazione di pop
+        -- Traslo l'ultimo elemento nella terza posizione dello stack
+        sensing_phase = FALSE & pop = TRUE : stack[4];
+
+        -- Altrimenti non fare nulla
+        TRUE : stack[3];
+    esac;
+    
+    -- Funzione che decide l'ultimo elemento dello stack
+    next(stack[4]):=
+    case
+        -- Se la priorità minima è zero non fare nulla
+        min_priority = 0 : empty;
+
+        -- Se siamo nella fase di misurazione e il quarto è l'unico elemento
+        -- vuoto dello stack prendo l'ultimo elemento rimasto fuori e lo inserisco
+        sensing_phase = TRUE & stack[1] != empty & stack[2] != empty & stack[3] != empty & stack[4] = empty:
+        case
+            (stack[1] != S1) & (stack[2] != S1) & (stack[3] != S1) : S1;
+            (stack[1] != S2) & (stack[2] != S2) & (stack[3] != S2) : S2;
+            (stack[1] != S3) & (stack[2] != S3) & (stack[3] != S3) : S3;
+            (stack[1] != S4) & (stack[2] != S4) & (stack[3] != S4) : S4;
+        esac;
+
+        -- Se non siamo nella fase di misurazione e bisogna fare un operazione di pop
+        -- Setto l'ultimo valore dello stack come vuoto
+        sensing_phase = FALSE & pop = TRUE : empty;
+
+        -- Altrimenti non fare nulla
+        TRUE : stack[4];
+    esac;
+
+    -- Funzione che decide quanto fermare la fase di misurazione
+    next(sensing_phase) :=
+    case
+        sensing_phase = FALSE : FALSE;
+
+        -- Casi in cui la fase deve finire
+        -- Es: Se il primo elemento dello stack è diverso da zero
+        -- allora deve esserci qualcosa nella prima posizione dello stack
+        max_priority != 0 & stack[1] = empty: TRUE;
+        mid_max_priority != 0 & stack[2] = empty: TRUE;
+        mid_min_priority != 0 & stack[3] = empty: TRUE;
+        min_priority != 0 & stack[4] = empty: TRUE;
+
+        TRUE : FALSE;
+    esac;
+
+    -- Funzione che decide quando bisogna effetture un pop sullo stack
+    next(pop) :=
+    case
+        -- Reimposta 'pop' a falso dopo un operazione di pop
+        pop = TRUE : FALSE;
+
+        -- Se siamo nella fase di misurazione allora non serve fare niente
+        sensing_phase = TRUE : FALSE;
+
+        -- Se c'è un semaforo che ha ancora del tempo a disposizione
+        (semaforoS1.tempo > 0) : FALSE;
+        (semaforoS2.tempo > 0) : FALSE;
+        (semaforoS3.tempo > 0) : FALSE;
+        (semaforoS4.tempo > 0) : FALSE;
+
+        -- Se la strada in cima allo stack ha il semaforo giallo allora la rimuovo
+        stack[1] = S1 & semaforoS1.colore = giallo : TRUE;
+        stack[1] = S2 & semaforoS2.colore = giallo : TRUE;
+        stack[1] = S3 & semaforoS3.colore = giallo : TRUE;
+        stack[1] = S4 & semaforoS4.colore = giallo : TRUE;
+
+        TRUE : FALSE;
+    esac;
+
+    -- Controlla il tempo che viene assegnato al semaforo
+    next(semaforoS1.tempo) := 
+    case
+        -- Se c'è ancora del tempo assegnato al semaforo lo decremento
+        (semaforoS1.colore = verde) & (semaforoS1.tempo > 0) : (semaforoS1.tempo - 1);
+
+        -- Se c'è un altro semaforo verde allora aspetto ad assegnare il tempo
+        ((semaforoS2.tempo != 0) | (semaforoS3.tempo != 0) | (semaforoS4.tempo != 0)) : 0;
+
+        -- Assegna il tempo al semaforo in base alla priorità
+        (semaforoS1.colore = giallo) & (sensoriS1.priority >= 5) : 10;
+        (semaforoS1.colore = giallo) & (sensoriS1.priority = 4) : 8;
+        (semaforoS1.colore = giallo) & (sensoriS1.priority = 3) : 6;
+        (semaforoS1.colore = giallo) & (sensoriS1.priority = 2) : 4;
+        (semaforoS1.colore = giallo) & (sensoriS1.priority = 1) : 2;
+        TRUE : semaforoS1.tempo;
+    esac;
+
+    -- Controlla il tempo che viene assegnato al semaforo
+    next(semaforoS2.tempo) := 
+    case
+        -- Se c'è ancora del tempo assegnato al semaforo lo decremento
+        (semaforoS2.colore = verde) & (semaforoS2.tempo > 0) : (semaforoS2.tempo - 1);
+
+        -- Se c'è un altro semaforo verde allora aspetto ad assegnare il tempo
+        ((semaforoS1.tempo != 0) | (semaforoS3.tempo != 0) | (semaforoS4.tempo != 0)) : 0;
+
+        -- Assegna il tempo al semaforo in base alla priorità
+        (semaforoS2.colore = giallo) & (sensoriS2.priority >= 5) : 10;
+        (semaforoS2.colore = giallo) & (sensoriS2.priority = 4) : 8;
+        (semaforoS2.colore = giallo) & (sensoriS2.priority = 3) : 6;
+        (semaforoS2.colore = giallo) & (sensoriS2.priority = 2) : 4;
+        (semaforoS2.colore = giallo) & (sensoriS2.priority = 1) : 2;
+        TRUE : semaforoS2.tempo;
+    esac;
+
+    -- Controlla il tempo che viene assegnato al semaforo
+    next(semaforoS3.tempo) := 
+    case
+        -- Se c'è ancora del tempo assegnato al semaforo lo decremento
+        (semaforoS3.colore = verde) & (semaforoS3.tempo > 0) : (semaforoS3.tempo - 1);
+
+        -- Se c'è un altro semaforo verde allora aspetto ad assegnare il tempo
+        ((semaforoS1.tempo != 0) | (semaforoS2.tempo != 0) | (semaforoS4.tempo != 0)) : 0;
+
+        -- Assegna il tempo al semaforo in base alla priorità
+        (semaforoS3.colore = giallo) & (sensoriS3.priority >= 5) : 10;
+        (semaforoS3.colore = giallo) & (sensoriS3.priority = 4) : 8;
+        (semaforoS3.colore = giallo) & (sensoriS3.priority = 3) : 6;
+        (semaforoS3.colore = giallo) & (sensoriS3.priority = 2) : 4;
+        (semaforoS3.colore = giallo) & (sensoriS3.priority = 1) : 2;
+        TRUE : semaforoS3.tempo;
+    esac;
+
+    -- Controlla il tempo che viene assegnato al semaforo
+    next(semaforoS4.tempo) := 
+    case
+        -- Se c'è ancora del tempo assegnato al semaforo lo decremento
+        (semaforoS4.colore = verde) & (semaforoS4.tempo > 0) : (semaforoS4.tempo - 1);
+
+        -- Se c'è un altro semaforo verde allora aspetto ad assegnare il tempo
+        ((semaforoS1.tempo != 0) | (semaforoS2.tempo != 0) | (semaforoS3.tempo != 0)) : 0;
+
+        -- Assegna il tempo al semaforo in base alla priorità
+        (semaforoS4.colore = giallo) & (sensoriS4.priority >= 5) : 10;
+        (semaforoS4.colore = giallo) & (sensoriS4.priority = 4) : 8;
+        (semaforoS4.colore = giallo) & (sensoriS4.priority = 3) : 6;
+        (semaforoS4.colore = giallo) & (sensoriS4.priority = 2) : 4;
+        (semaforoS4.colore = giallo) & (sensoriS4.priority = 1) : 2;
+        TRUE : semaforoS4.tempo;
+    esac;
+
+    -- Controlla il colore del semaforo
+    next(semaforoS1.colore) := 
+    case
+        -- Nella fase di misurazione il semaforo rimane rosso
+        sensing_phase = TRUE : rosso;
+
+        -- Se il semaforo ha del tempo assegnato allora è verde
+        semaforoS1.tempo > 0 : verde;
+
+        -- Se non siamo in una fase di transizione assegno il giallo al primo dello stack
+        pop != TRUE & stack[1] = S1 : giallo;
+
+        -- Se il semaforo ha tempo zero allora è rosso
+        semaforoS1.tempo = 0 : rosso;
+    esac;
+
+    -- Controlla il colore del semaforo
+    next(semaforoS2.colore) := 
+    case
+        -- Nella fase di misurazione il semaforo rimane rosso
+        sensing_phase = TRUE : rosso;
+
+        -- Se il semaforo ha del tempo assegnato allora è verde
+        semaforoS2.tempo > 0 : verde;
+
+        -- Se non siamo in una fase di transizione assegno il giallo al primo dello stack
+        pop != TRUE & stack[1] = S2 : giallo;
+
+        -- Se il semaforo ha tempo zero allora è rosso
+        semaforoS2.tempo = 0 : rosso;
+    esac;
+
+    -- Controlla il colore del semaforo
+    next(semaforoS3.colore) := 
+    case
+        -- Nella fase di misurazione il semaforo rimane rosso
+        sensing_phase = TRUE : rosso;
+
+        -- Se il semaforo ha del tempo assegnato allora è verde
+        semaforoS3.tempo > 0 : verde;
+
+        -- Se non siamo in una fase di transizione assegno il giallo al primo dello stack
+        pop != TRUE & stack[1] = S3 : giallo;
+
+        -- Se il semaforo ha tempo zero allora è rosso
+        semaforoS3.tempo = 0 : rosso;
+    esac;
+
+    -- Controlla il colore del semaforo
+    next(semaforoS4.colore) := 
+    case
+        -- Nella fase di misurazione il semaforo rimane rosso
+        sensing_phase = TRUE : rosso;
+
+        -- Se il semaforo ha del tempo assegnato allora è verde
+        semaforoS4.tempo > 0 : verde;
+
+        -- Se non siamo in una fase di transizione assegno il giallo al primo dello stack
+        pop != TRUE & stack[1] = S4 : giallo;
+
+        -- Se il semaforo ha tempo zero allora è rosso
+        semaforoS4.tempo = 0 : rosso;
+    esac;
+
+    -- Controlla la variabile stop dei sensori
+    -- Quando il semaforo diventa verde i veicoli vengono fatti passare
+    -- e i sensori azzerati
+    next(sensoriS1.stop) :=
+    case
+        semaforoS1.tempo > 0 : FALSE;
+        TRUE : TRUE;
+    esac;
+
+    -- Controlla la variabile stop dei sensori
+    next(sensoriS2.stop) :=
+    case
+        semaforoS2.tempo > 0 : FALSE;
+        TRUE : TRUE;
+    esac;
+
+    -- Controlla la variabile stop dei sensori
+    next(sensoriS3.stop) :=
+    case
+        semaforoS3.tempo > 0 : FALSE;
+        TRUE : TRUE;
+    esac;
+
+    -- Controlla la variabile stop dei sensori
+    next(sensoriS4.stop) :=
+    case
+        semaforoS4.tempo > 0 : FALSE;
+        TRUE : TRUE;
+    esac;
+
+ 
+-- Modulo sensore mette raggruppa 4 sensori che servono a calcolare la quantità
+-- di macchine presenti sulla strada e assegnarli un valore (priorità)
+MODULE sensori()
+
+VAR
+    -- Quatro sensori presenti sulla strada
+    -- Il loro valore può assumere valori binari
+    -- 0 = macchina assente
+    -- 1 = macchina presente
+    -- I sensori sono disposti :
+    --
+    --     High | Low
+    --    ------------
+    --      A   |  C
+    --      B   |  D
+    --
+    sensoreA : 0..1;
+    sensoreB : 0..1;
+    sensoreC : 0..1;
+    sensoreD : 0..1;
+
+    -- Identifica la presenza di un veicolo d'emergenza
+    -- che avrà priorità maggiore rispetto alle altre
+    veicoloEmergenza : 0..1;
+
+    -- Blocca i valori dei sensori fino al verde
+    -- Una volta sbloccati li reimposto a 0
+    stop : boolean;
+
+ASSIGN
+    -- Se il semaforo è rosso il valore del sensore non può cambiare
+    init(stop) := TRUE;
+
+    -- Blocca il valore del sensore finchè 'stop' è vero
+    next(sensoreA) := 
+    case
+        stop = TRUE : sensoreA;
+        stop = FALSE : 0;
+    esac;
+
+    -- Blocca il valore del sensore finchè 'stop' è vero
+    next(sensoreB) := 
+    case
+        stop = TRUE : sensoreB;
+        stop = FALSE : 0;
+    esac;
+
+    -- Blocca il valore del sensore finchè 'stop' è vero
+    next(sensoreC) := 
+    case
+        stop = TRUE : sensoreC;
+        stop = FALSE : 0;
+    esac;
+
+    -- Blocca il valore del sensore finchè 'stop' è vero
+    next(sensoreD) := 
+    case
+        stop = TRUE : sensoreD;
+        stop = FALSE : 0;
+    esac;
+
+    -- Blocca il valore del veicolo d'emergenza finchè 'stop' è vero
+    next(veicoloEmergenza) := 
+    case
+        stop = TRUE : veicoloEmergenza;
+        stop = FALSE : 0;
+    esac;
+
+-- Funzione che restituisce la priorità in base alla configurazione dei sensori
+DEFINE priority := 
+case
+    -- Se è presente un veicolo d'emergenza assegna la priorità piu alta
+    veicoloEmergenza = 1 : 6;
+
+    -- Primo sensore attivo nella corsia ad alta densità = 1
+    (sensoreA = 1) & (sensoreB = 0) & (sensoreC = 0) & (sensoreD = 0) : 1;
+
+    -- Primo sensore attivo in entrambe le corsie = 2
+    (sensoreA = 1) & (sensoreB = 0) & (sensoreC = 1) & (sensoreD = 0) : 2;
+
+    -- Entrambi i sensori attivi nella corsia ad alta densità = 3
+    (sensoreA = 1) & (sensoreB = 1) & (sensoreC = 0) & (sensoreD = 0) : 3;
+
+    -- Entrambi i sensori attivi nella corsia ad alta densità e il primo in quella
+    -- a bassa densità = 4
+    (sensoreA = 1) & (sensoreB = 1) & (sensoreC = 1) & (sensoreD = 0) : 4;
+
+    -- Tutti i sensori attivi = 5
+    (sensoreA = 1) & (sensoreB = 1) & (sensoreC = 1) & (sensoreD = 1) : 5;
+
+    -- Tutte le altre configurazioni vengono considerate letture errate e non considerate
+    TRUE : 0;
+esac;
+
+
+-- Modulo semaforo che raccoglie la variabile che rappresenta il suo colore
+-- e il tempo che gli è stato assegnato
+MODULE semaforo()
+
+VAR
+    -- Colori che può assumere il semaforo
+    colore : {rosso, giallo, verde};
+
+    -- Range di tempo che può avere il semaforo verde
+    tempo : 0..10;
+
+ASSIGN  
+    -- Il semaforo è inizialmente rosso e ha tempo zero
+    init(colore) := rosso;
+    init(tempo) := 0;
+
+
+-- Modulo centrale che istanzia tutti moduli --
+MODULE main  
+
+VAR
+    -- Set di semafori (uno per ogni strada da gestire)
+    semaforoS1 : semaforo; 
+    semaforoS2 : semaforo; 
+    semaforoS3 : semaforo; 
+    semaforoS4 : semaforo; 
+
+    -- Set di sensori (uno per ogni strada da gestire, ognuno composto da 4 sensori)
+    sensoriS1 : sensori;
+    sensoriS2 : sensori;
+    sensoriS3 : sensori;
+    sensoriS4 : sensori;
+
+    -- Server che raccoglie i dati dai sensori e decide chi deve passare in base alla priorità
+    server : server(sensoriS1, semaforoS1, sensoriS2, semaforoS2, sensoriS3, semaforoS3, sensoriS4, semaforoS4);
+
+
+---------- Proprietà che il modello deve verificare (TRUE) ----------
+-- Se la priorità di un sensore è maggiore di zero allora in tutte le computazioni
+-- successive esiste uno stato in cui il semaforo corrispondente diventa giallo
+
+LTLSPEC sensoriS1.priority > 0 -> F(semaforoS1.colore = giallo)
+LTLSPEC sensoriS2.priority > 0 -> F(semaforoS2.colore = giallo)
+LTLSPEC sensoriS3.priority > 0 -> F(semaforoS3.colore = giallo)
+LTLSPEC sensoriS4.priority > 0 -> F(semaforoS4.colore = giallo)
+
+-- Se la priorità di un sensore è maggiore di zero allora in tutte le computazioni
+-- successive esiste uno stato in cui il semaforo corrispondente diventa verde
+LTLSPEC sensoriS1.priority > 0 -> F(semaforoS1.colore = verde)
+LTLSPEC sensoriS2.priority > 0 -> F(semaforoS2.colore = verde)
+LTLSPEC sensoriS3.priority > 0 -> F(semaforoS3.colore = verde)
+LTLSPEC sensoriS4.priority > 0 -> F(semaforoS4.colore = verde)
+
+-- Ovunque si arrivi a uno stato dove la priorità di una strada è maggiore di 0 allora in tutte le computazioni 
+-- che partono da quello stato prima o poi il semaforo diventerà giallo e nello stato subito successivo diventerà verde
+CTLSPEC sensoriS1.priority > 0 -> AF((semaforoS1.colore = giallo) & AX(semaforoS1.colore = verde))
+CTLSPEC sensoriS2.priority > 0 -> AF((semaforoS2.colore = giallo) & AX(semaforoS2.colore = verde))
+CTLSPEC sensoriS3.priority > 0 -> AF((semaforoS3.colore = giallo) & AX(semaforoS3.colore = verde))
+CTLSPEC sensoriS4.priority > 0 -> AF((semaforoS4.colore = giallo) & AX(semaforoS4.colore = verde))
+
+-- In tutte le computazioni in tutti gli stati dove lo stack è pieno il primo dello stack ha il semaforo verde e il secondo giallo
+CTLSPEC (server.stack[1] = S1 & server.stack[2] = S2) -> AX(semaforoS1.colore = verde & semaforoS2.colore = giallo)
+CTLSPEC (server.stack[1] = S2 & server.stack[2] = S3) -> AX(semaforoS2.colore = verde & semaforoS3.colore = giallo)
+CTLSPEC (server.stack[1] = S3 & server.stack[2] = S4) -> AX(semaforoS3.colore = verde & semaforoS4.colore = giallo)
+CTLSPEC (server.stack[1] = S1 & server.stack[2] = S4) -> AX(semaforoS1.colore = verde & semaforoS4.colore = giallo)
+CTLSPEC (server.stack[1] = S2 & server.stack[2] = S1) -> AX(semaforoS2.colore = verde & semaforoS1.colore = giallo)
+CTLSPEC (server.stack[1] = S4 & server.stack[2] = S3) -> AX(semaforoS4.colore = verde & semaforoS3.colore = giallo)
+CTLSPEC (server.stack[1] = S3 & server.stack[2] = S2) -> AX(semaforoS3.colore = verde & semaforoS2.colore = giallo)
+CTLSPEC (server.stack[1] = S4 & server.stack[2] = S1) -> AX(semaforoS4.colore = verde & semaforoS1.colore = giallo)
+
+
+---------- Proprietà che non devo verificarsi (FALSE) ----------
+-- Se la priorità è 0 ci sarà sempre uno stato dove prima o poi il colore del semaforo cambierà
+CTLSPEC sensoriS1.priority = 0 -> EF(semaforoS1.colore != rosso)
+CTLSPEC sensoriS2.priority = 0 -> EF(semaforoS2.colore != rosso)
+CTLSPEC sensoriS3.priority = 0 -> EF(semaforoS3.colore != rosso)
+CTLSPEC sensoriS4.priority = 0 -> EF(semaforoS4.colore != rosso)
+
+-- Esiste uno stato in cui due semafori sono verdi nello stesso momento
+CTLSPEC EF(semaforoS1.colore = verde & semaforoS2.colore = verde)
+CTLSPEC EF(semaforoS2.colore = verde & semaforoS3.colore = verde)
+CTLSPEC EF(semaforoS3.colore = verde & semaforoS4.colore = verde)
+CTLSPEC EF(semaforoS1.colore = verde & semaforoS4.colore = verde)
+CTLSPEC EF(semaforoS1.colore = verde & semaforoS3.colore = verde)
+CTLSPEC EF(semaforoS2.colore = verde & semaforoS4.colore = verde)
+
+-- Esiste uno stato in cui due semafori sono verdi nello stesso momento
+CTLSPEC EF(semaforoS1.colore = giallo & semaforoS2.colore = giallo)
+CTLSPEC EF(semaforoS2.colore = giallo & semaforoS3.colore = giallo)
+CTLSPEC EF(semaforoS3.colore = giallo & semaforoS4.colore = giallo)
+CTLSPEC EF(semaforoS1.colore = giallo & semaforoS4.colore = giallo)
+CTLSPEC EF(semaforoS1.colore = giallo & semaforoS3.colore = giallo)
+CTLSPEC EF(semaforoS2.colore = giallo & semaforoS4.colore = giallo)
+
+-- Esiste uno stato dove il semaforo ha colore verde anche se il tempo del verde è scaduto 
+CTLSPEC EF(semaforoS1.colore = verde & semaforoS1.tempo = 0)
+CTLSPEC EF(semaforoS2.colore = verde & semaforoS2.tempo = 0)
+CTLSPEC EF(semaforoS3.colore = verde & semaforoS3.tempo = 0)
+CTLSPEC EF(semaforoS4.colore = verde & semaforoS4.tempo = 0)
+
+-- Esiste uno stato dove il tempo del verde è > 0 in una strada e un'altra strada ha il verde
+CTLSPEC EF semaforoS1.tempo > 0 & (semaforoS2.colore = verde | semaforoS3.colore = verde | semaforoS4.colore = verde)
+CTLSPEC EF semaforoS2.tempo > 0 & (semaforoS1.colore = verde | semaforoS3.colore = verde | semaforoS4.colore = verde)
+CTLSPEC EF semaforoS3.tempo > 0 & (semaforoS1.colore = verde | semaforoS2.colore = verde | semaforoS4.colore = verde)
+CTLSPEC EF semaforoS4.tempo > 0 & (semaforoS1.colore = verde | semaforoS2.colore = verde | semaforoS3.colore = verde)
+
+-- Esiste uno stato dove il semaforo è rosso e nello stato successivo passa direttamente verde 
+CTLSPEC EF semaforoS1.colore = rosso & EX (semaforoS1.colore = verde)
+CTLSPEC EF semaforoS2.colore = rosso & EX (semaforoS2.colore = verde)
+CTLSPEC EF semaforoS3.colore = rosso & EX (semaforoS3.colore = verde)
+CTLSPEC EF semaforoS4.colore = rosso & EX (semaforoS4.colore = verde)
+
+-- Esiste una computazione dove il tempo del semaforo verde rimane sempre maggiore di 0
+CTLSPEC EG semaforoS1.tempo > 0 
+CTLSPEC EG semaforoS2.tempo > 0 
+CTLSPEC EG semaforoS3.tempo > 0 
+CTLSPEC EG semaforoS4.tempo > 0 
+
+-- Esiste uno stato in una computazione dove durante il sensing_phase il sistema assegna il verde o il giallo a un semaforo
+CTLSPEC EF (server.sensing_phase = TRUE) & (semaforoS1.colore = verde | semaforoS2.colore = verde | semaforoS3.colore = verde | semaforoS4.colore = verde)
+CTLSPEC EF (server.sensing_phase = TRUE) & (semaforoS1.colore = giallo | semaforoS2.colore = giallo | semaforoS3.colore = giallo | semaforoS4.colore = giallo)
+
+-- Esiste una computazione dove lo stack rimane sempre vuoto
+CTLSPEC EG (server.stack[1] = empty & server.stack[2] = empty & server.stack[3] = empty & server.stack[4] = empty)
